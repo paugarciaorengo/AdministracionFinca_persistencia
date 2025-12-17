@@ -4,41 +4,48 @@ import servicio.GestorComunidad;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import javax.swing.border.TitledBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
-import javax.swing.table.JTableHeader;
-import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
- * SIGCO (demo Swing) - Interfaz mejorada con Nimbus L&F y diseño limpio.
+ * SIGCO - Versión Profesional
+ * Incluye:
+ * 1. Buscador específico por columnas.
+ * 2. Exportación a CSV (Excel).
+ * 3. Dashboard Interactivo.
+ * 4. Calendarios (Spinners).
  */
 public class App extends JFrame {
 
     private final File ficheroDatos;
     private final GestorComunidad gestor;
 
-    // Caches locales para mapeo (necesarios para edición/borrado)
+    // Caches
     private List<Profesor> listaProfesores = new ArrayList<>();
     private List<Auditor> listaAuditoresGestion = new ArrayList<>();
     private List<Material> listaMaterialesGestion = new ArrayList<>();
 
-    // --- MODELOS DE TABLAS ---
-    // Hacemos que las celdas no sean editables directamente (isCellEditable return false) para evitar confusiones
+    // Modelos
     private final DefaultTableModel vecinosModel = new NonEditableModel(new Object[]{"DNI", "Nombre", "Dirección", "CP", "Ciudad", "Teléfono"}, 0);
     private final DefaultTableModel profesoresModel = new NonEditableModel(new Object[]{"Nombre", "Apellidos", "Dirección", "Teléfono", "Sueldo"}, 0);
     private final DefaultTableModel auditoresGestionModel = new NonEditableModel(new Object[]{"Nombre", "Apellidos", "CIF", "Empresa", "Dirección", "Teléfono"}, 0);
     private final DefaultTableModel materialesModel = new NonEditableModel(new Object[]{"Nombre", "Precio"}, 0);
-    
     private final DefaultTableModel visitasModel = new NonEditableModel(new Object[]{"ID", "Fecha", "Vecino", "Descripción", "Importe", "Admin", "Estado"}, 0);
     private final DefaultTableModel facturasModel = new NonEditableModel(new Object[]{"ID", "Fecha", "Vecino", "Total", "#Visitas"}, 0);
     private final DefaultTableModel cursosModel = new NonEditableModel(new Object[]{"Curso", "Duración", "Precio", "Inscritos"}, 0);
@@ -48,7 +55,7 @@ public class App extends JFrame {
     private final DefaultTableModel auditoriaVisitasModel = new NonEditableModel(new Object[]{"ID", "Vecino", "Fecha", "Importe", "Estado"}, 0);
     private final DefaultTableModel auditoriaMaterialesModel = new NonEditableModel(new Object[]{"Material", "Precio"}, 0);
 
-    // --- COMPONENTES DE SELECCIÓN ---
+    // Combos
     private final JComboBox<Vecino> comboVecinosVisita = new JComboBox<>();
     private final JComboBox<Vecino> comboVecinosFactura = new JComboBox<>();
     private final JComboBox<Vecino> comboVecinosInscripcion = new JComboBox<>();
@@ -60,33 +67,28 @@ public class App extends JFrame {
     private final JComboBox<FichaVisita> comboVisitasParaAuditoria = new JComboBox<>();
     private final JComboBox<Material> comboMaterialesParaAuditoria = new JComboBox<>();
 
-    // --- TABLAS ---
+    // Tablas
     private final JTable tablaVisitas = createStyledTable(visitasModel);
     private final JTable tablaAuditorias = createStyledTable(auditoriasModel);
     private final JTable tablaProfesores = createStyledTable(profesoresModel);
     private final JTable tablaAuditoresGestion = createStyledTable(auditoresGestionModel);
     private final JTable tablaMateriales = createStyledTable(materialesModel);
+    private final JTable tablaVecinos = createStyledTable(vecinosModel);
+
+    // Dashboard labels
+    private JLabel lblTotalVecinos = new JLabel("0");
+    private JLabel lblTotalRecaudado = new JLabel("0.0 €");
+    private JLabel lblVisitasPendientes = new JLabel("0");
 
     public App() {
-        // Configurar tema Nimbus antes de iniciar componentes
-        try {
-            for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
-                if ("Nimbus".equals(info.getName())) {
-                    UIManager.setLookAndFeel(info.getClassName());
-                    break;
-                }
-            }
-        } catch (Exception ignored) { }
-
-        setTitle("SIGCO - Gestión de Comunidades");
-        setSize(1200, 750); // Un poco más grande para respirar
+        setupLookAndFeel();
+        setTitle("SIGCO - Gestión Integral v2.0");
+        setSize(1300, 850);
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setLocationRelativeTo(null);
+        UIManager.put("Table.alternateRowColor", new Color(240, 248, 255));
 
-        // Ajustes globales de UI
-        UIManager.put("Table.alternateRowColor", new Color(242, 242, 242));
-
-        // Persistencia
+        // Carga
         this.ficheroDatos = new File("sigco.dat");
         GestorComunidad.Datos datos;
         if (ficheroDatos.exists()) {
@@ -94,9 +96,7 @@ public class App extends JFrame {
                 datos = GestorPersistencia.cargar(ficheroDatos);
             } catch (Exception ex) {
                 datos = new GestorComunidad.Datos();
-                JOptionPane.showMessageDialog(this,
-                        "Error al cargar datos. Se iniciará vacío.\n" + ex.getMessage(),
-                        "Error de Carga", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Error cargando datos: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
             }
         } else {
             datos = new GestorComunidad.Datos();
@@ -104,16 +104,14 @@ public class App extends JFrame {
         this.gestor = new GestorComunidad(datos);
 
         addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                guardarDatosYSalir();
-            }
+            @Override public void windowClosing(WindowEvent e) { guardarDatosYSalir(); }
         });
 
-        // Construcción de pestañas
+        // Tabs
         JTabbedPane tabs = new JTabbedPane();
-        tabs.setFont(new Font("SansSerif", Font.BOLD, 12));
+        tabs.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         
+        tabs.addTab("🏠 Dashboard", buildDashboardPanel());
         tabs.addTab("👥 Vecinos", buildVecinosPanel());
         tabs.addTab("🎓 Profesores", buildProfesoresPanel());
         tabs.addTab("📋 Auditores", buildAuditoresGestionPanel());
@@ -123,16 +121,24 @@ public class App extends JFrame {
         tabs.addTab("📚 Cursos", buildCursosPanel());
         tabs.addTab("🔍 Auditorías", buildAuditoriasPanel());
 
-        JPanel mainPanel = new JPanel(new BorderLayout());
-        mainPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
-        mainPanel.add(tabs, BorderLayout.CENTER);
-        
-        setContentPane(mainPanel);
+        tabs.addChangeListener(e -> {
+            if (tabs.getSelectedIndex() == 0) updateDashboard();
+        });
 
-        // Render específico para visitas
+        setContentPane(tabs);
         tablaVisitas.setDefaultRenderer(Object.class, new EstadoPagoRenderer());
-
         refreshAll();
+    }
+
+    private void setupLookAndFeel() {
+        try {
+            for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
+                if ("Nimbus".equals(info.getName())) {
+                    UIManager.setLookAndFeel(info.getClassName());
+                    break;
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     private void guardarDatosYSalir() {
@@ -141,43 +147,176 @@ public class App extends JFrame {
             dispose();
             System.exit(0);
         } catch (Exception ex) {
-            int opt = JOptionPane.showConfirmDialog(this,
-                    "No se han podido guardar los datos:\n" + ex.getMessage() + "\n\n¿Salir igualmente?",
-                    "Error de Guardado", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (opt == JOptionPane.YES_OPTION) {
+            if (JOptionPane.showConfirmDialog(this, "Error al guardar. ¿Salir sin guardar?", "Error CRÍTICO", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 dispose();
                 System.exit(0);
             }
         }
     }
 
-    // --- HELPER PARA ESTILAR TABLAS ---
+    // --- DASHBOARD ---
+    private JPanel buildDashboardPanel() {
+        JPanel root = new JPanel(new GridLayout(2, 2, 20, 20));
+        root.setBorder(new EmptyBorder(30, 30, 30, 30));
+        root.setBackground(Color.WHITE);
+
+        root.add(createCard("Vecinos Activos", lblTotalVecinos, new Color(65, 105, 225)));
+        root.add(createCard("Visitas Impagadas", lblVisitasPendientes, new Color(220, 20, 60)));
+        root.add(createCard("Facturación Total", lblTotalRecaudado, new Color(46, 139, 87)));
+        
+        JPanel infoPanel = new JPanel(new BorderLayout());
+        infoPanel.setBorder(BorderFactory.createTitledBorder("Información"));
+        JTextArea info = new JTextArea("Sistema de Gestión de Comunidades.\nVersión 2.0\n\n- Use el buscador para filtrar tablas.\n- Exporte datos a CSV con un clic.\n- Guardado automático al cerrar.");
+        info.setEditable(false);
+        info.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        info.setMargin(new Insets(15,15,15,15));
+        infoPanel.add(info);
+        root.add(infoPanel);
+
+        return root;
+    }
+
+    private JPanel createCard(String title, JLabel valueLabel, Color color) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBorder(new EmptyBorder(20, 20, 20, 20));
+        card.setBackground(color);
+        
+        JLabel lblTitle = new JLabel(title);
+        lblTitle.setForeground(Color.WHITE);
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        
+        valueLabel.setForeground(Color.WHITE);
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 42));
+        valueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+
+        card.add(lblTitle, BorderLayout.NORTH);
+        card.add(valueLabel, BorderLayout.CENTER);
+        return card;
+    }
+
+    // --- HELPER TABLAS & BUSCADOR MEJORADO ---
     private JTable createStyledTable(DefaultTableModel model) {
         JTable table = new JTable(model);
-        table.setRowHeight(28); // Filas más altas
-        table.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 13));
+        table.setRowHeight(28);
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setAutoCreateRowSorter(true); // Permite ordenar por columnas
+        table.setRowSorter(new TableRowSorter<>(model));
         return table;
     }
 
-    // --- HELPER PARA PANELES COMUNES ---
-    // Crea un panel estándar con tabla arriba y formulario abajo
     private JPanel createStandardPanel(JTable table, JPanel formPanel) {
         JPanel root = new JPanel(new BorderLayout(10, 10));
         root.setBorder(new EmptyBorder(10, 10, 10, 10));
-        root.add(new JScrollPane(table), BorderLayout.CENTER);
-        if (formPanel != null) {
-            root.add(formPanel, BorderLayout.SOUTH);
+
+        // --- BARRA SUPERIOR: BUSCADOR + EXPORTAR ---
+        JPanel topBar = new JPanel(new BorderLayout(10, 0));
+        
+        // 1. Panel de Búsqueda
+        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        searchPanel.add(new JLabel("🔍 Buscar en:"));
+        
+        // Combo para elegir columna
+        JComboBox<String> colCombo = new JComboBox<>();
+        colCombo.addItem("Todas"); // Opción por defecto
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            colCombo.addItem(table.getColumnName(i));
         }
+        searchPanel.add(colCombo);
+        
+        // Campo de texto
+        JTextField searchField = new JTextField(20);
+        searchPanel.add(searchField);
+        
+        // 2. Botón Exportar
+        JButton exportBtn = new JButton("📂 Exportar CSV");
+        exportBtn.addActionListener(e -> exportarCSV(table));
+        
+        topBar.add(searchPanel, BorderLayout.WEST);
+        topBar.add(exportBtn, BorderLayout.EAST);
+
+        // --- LÓGICA DE BÚSQUEDA ---
+        @SuppressWarnings("unchecked")
+        TableRowSorter<DefaultTableModel> sorter = (TableRowSorter<DefaultTableModel>) table.getRowSorter();
+        
+        DocumentListener dl = new DocumentListener() {
+            private void filter() {
+                String text = searchField.getText();
+                int colIndex = colCombo.getSelectedIndex() - 1; // -1 porque 0 es "Todas"
+
+                if (text == null || text.trim().isEmpty()) {
+                    sorter.setRowFilter(null);
+                } else {
+                    try {
+                        String regex = "(?i)" + Pattern.quote(text);
+                        if (colIndex < 0) {
+                            sorter.setRowFilter(RowFilter.regexFilter(regex)); // Busca en todas
+                        } else {
+                            sorter.setRowFilter(RowFilter.regexFilter(regex, colIndex)); // Busca en columna específica
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+            @Override public void insertUpdate(DocumentEvent e) { filter(); }
+            @Override public void removeUpdate(DocumentEvent e) { filter(); }
+            @Override public void changedUpdate(DocumentEvent e) { filter(); }
+        };
+        searchField.getDocument().addDocumentListener(dl);
+        colCombo.addActionListener(e -> dl.insertUpdate(null)); // Refiltrar al cambiar combo
+
+        root.add(topBar, BorderLayout.NORTH);
+        root.add(new JScrollPane(table), BorderLayout.CENTER);
+        if (formPanel != null) root.add(formPanel, BorderLayout.SOUTH);
+        
         return root;
+    }
+
+    // --- LÓGICA EXPORTACIÓN CSV ---
+    private void exportarCSV(JTable table) {
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Guardar como CSV");
+        fc.setSelectedFile(new File("exportacion.csv"));
+        
+        if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(fc.getSelectedFile()))) {
+                // Cabeceras
+                for (int i = 0; i < table.getColumnCount(); i++) {
+                    bw.write(table.getColumnName(i) + (i == table.getColumnCount()-1 ? "" : ","));
+                }
+                bw.newLine();
+                // Datos
+                for (int i = 0; i < table.getRowCount(); i++) {
+                    for (int j = 0; j < table.getColumnCount(); j++) {
+                        Object val = table.getValueAt(i, j);
+                        String str = (val == null) ? "" : val.toString().replace(",", " "); // Evitar romper CSV
+                        bw.write(str + (j == table.getColumnCount()-1 ? "" : ","));
+                    }
+                    bw.newLine();
+                }
+                JOptionPane.showMessageDialog(this, "Datos exportados correctamente.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error al exportar: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    // --- DATE SPINNER ---
+    private JSpinner createDateSpinner() {
+        SpinnerDateModel model = new SpinnerDateModel();
+        JSpinner spinner = new JSpinner(model);
+        JSpinner.DateEditor editor = new JSpinner.DateEditor(spinner, "dd/MM/yyyy");
+        spinner.setEditor(editor);
+        spinner.setValue(new Date());
+        return spinner;
+    }
+
+    private LocalDate getDateFromSpinner(JSpinner spinner) {
+        Date date = (Date) spinner.getValue();
+        return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
     }
 
     // --- VECINOS ---
     private JPanel buildVecinosPanel() {
-        JTable tabla = createStyledTable(vecinosModel);
-
-        JPanel form = new JPanel(new GridLayout(0, 4, 10, 10)); // Más columnas para ahorrar altura
+        JPanel form = new JPanel(new GridLayout(0, 4, 10, 10));
         form.setBorder(BorderFactory.createTitledBorder("Nuevo Vecino"));
         
         JTextField dni = new JTextField();
@@ -195,25 +334,21 @@ public class App extends JFrame {
         addLabeledField(form, "Teléfono:", telefono);
 
         JButton add = new JButton("Añadir Vecino");
-        add.setFont(new Font("SansSerif", Font.BOLD, 12));
         add.addActionListener(e -> {
             try {
                 gestor.registrarVecino(dni.getText(), nombre.getText(), direccion.getText(), cp.getText(), ciudad.getText(), telefono.getText());
                 clearFields(dni, nombre, direccion, cp, ciudad, telefono);
                 refreshAll();
-            } catch (Exception ex) {
-                showError(ex.getMessage());
-            }
+            } catch (Exception ex) { showError(ex.getMessage()); }
         });
 
         JPanel south = new JPanel(new BorderLayout(10, 10));
         south.add(form, BorderLayout.CENTER);
-        
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         btnPanel.add(add);
         south.add(btnPanel, BorderLayout.SOUTH);
 
-        return createStandardPanel(tabla, south);
+        return createStandardPanel(tablaVecinos, south);
     }
 
     // --- PROFESORES ---
@@ -233,7 +368,6 @@ public class App extends JFrame {
         addLabeledField(form, "Teléfono:", telefono);
         addLabeledField(form, "Sueldo:", sueldo);
 
-        // Botones
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton add = new JButton("Añadir");
         JButton update = new JButton("Modificar");
@@ -243,7 +377,6 @@ public class App extends JFrame {
         tablaProfesores.getSelectionModel().addListSelectionListener(e -> {
             if (e.getValueIsAdjusting()) return;
             int row = tablaProfesores.getSelectedRow();
-            // Convertir índice de vista a modelo (por si está ordenado)
             if (row >= 0) {
                 int modelRow = tablaProfesores.convertRowIndexToModel(row);
                 if (modelRow < listaProfesores.size()) {
@@ -267,7 +400,7 @@ public class App extends JFrame {
 
         update.addActionListener(e -> {
             int row = tablaProfesores.getSelectedRow();
-            if (row < 0) { showWarning("Selecciona un profesor."); return; }
+            if (row < 0) return;
             try {
                 Profesor p = listaProfesores.get(tablaProfesores.convertRowIndexToModel(row));
                 p.setNombre(nombre.getText());
@@ -281,7 +414,7 @@ public class App extends JFrame {
 
         delete.addActionListener(e -> {
             int row = tablaProfesores.getSelectedRow();
-            if (row < 0) { showWarning("Selecciona un profesor."); return; }
+            if (row < 0) return;
             if (confirm("¿Eliminar profesor?")) {
                 gestor.eliminarProfesor(listaProfesores.get(tablaProfesores.convertRowIndexToModel(row)));
                 refreshAll();
@@ -292,7 +425,6 @@ public class App extends JFrame {
         JPanel south = new JPanel(new BorderLayout());
         south.add(form, BorderLayout.CENTER);
         south.add(buttons, BorderLayout.SOUTH);
-
         return createStandardPanel(tablaProfesores, south);
     }
 
@@ -310,7 +442,7 @@ public class App extends JFrame {
 
         addLabeledField(form, "Nombre:", nombre);
         addLabeledField(form, "Apellidos:", apellidos);
-        addLabeledField(form, "CIF Empresa:", cif);
+        addLabeledField(form, "CIF:", cif);
         addLabeledField(form, "Empresa:", empresa);
         addLabeledField(form, "Dirección:", direccion);
         addLabeledField(form, "Teléfono:", telefono);
@@ -345,7 +477,7 @@ public class App extends JFrame {
 
         update.addActionListener(e -> {
             int row = tablaAuditoresGestion.getSelectedRow();
-            if (row < 0) { showWarning("Selecciona un auditor."); return; }
+            if (row < 0) return;
             try {
                 Auditor a = listaAuditoresGestion.get(tablaAuditoresGestion.convertRowIndexToModel(row));
                 a.setNombre(nombre.getText());
@@ -360,7 +492,7 @@ public class App extends JFrame {
 
         delete.addActionListener(e -> {
             int row = tablaAuditoresGestion.getSelectedRow();
-            if (row < 0) { showWarning("Selecciona un auditor."); return; }
+            if (row < 0) return;
             if (confirm("¿Eliminar auditor?")) {
                 gestor.eliminarAuditor(listaAuditoresGestion.get(tablaAuditoresGestion.convertRowIndexToModel(row)));
                 refreshAll();
@@ -411,7 +543,7 @@ public class App extends JFrame {
 
         update.addActionListener(e -> {
             int row = tablaMateriales.getSelectedRow();
-            if (row < 0) { showWarning("Selecciona un material."); return; }
+            if (row < 0) return;
             try {
                 Material m = listaMaterialesGestion.get(tablaMateriales.convertRowIndexToModel(row));
                 m.setNombre(nombre.getText());
@@ -422,7 +554,7 @@ public class App extends JFrame {
 
         delete.addActionListener(e -> {
             int row = tablaMateriales.getSelectedRow();
-            if (row < 0) { showWarning("Selecciona un material."); return; }
+            if (row < 0) return;
             if (confirm("¿Eliminar material?")) {
                 gestor.eliminarMaterial(listaMaterialesGestion.get(tablaMateriales.convertRowIndexToModel(row)));
                 refreshAll();
@@ -441,13 +573,13 @@ public class App extends JFrame {
         JPanel form = new JPanel(new GridLayout(0, 2, 10, 10));
         form.setBorder(BorderFactory.createTitledBorder("Nueva Visita"));
 
-        JTextField fecha = new JTextField();
+        JSpinner fechaSpinner = createDateSpinner();
         JTextField descripcion = new JTextField();
         JTextField importe = new JTextField();
         JTextField admin = new JTextField();
 
         addLabeledField(form, "Vecino:", comboVecinosVisita);
-        addLabeledField(form, "Fecha (YYYY-MM-DD):", fecha);
+        addLabeledField(form, "Fecha:", fechaSpinner);
         addLabeledField(form, "Descripción:", descripcion);
         addLabeledField(form, "Importe (€):", importe);
         addLabeledField(form, "Administrador:", admin);
@@ -456,7 +588,7 @@ public class App extends JFrame {
         add.addActionListener(e -> {
             try {
                 Vecino v = (Vecino) comboVecinosVisita.getSelectedItem();
-                LocalDate f = LocalDate.parse(fecha.getText().trim());
+                LocalDate f = getDateFromSpinner(fechaSpinner);
                 double imp = Double.parseDouble(importe.getText().trim());
                 gestor.crearFichaVisita(v, f, descripcion.getText(), imp, admin.getText());
                 clearFields(descripcion, importe, admin);
@@ -480,11 +612,11 @@ public class App extends JFrame {
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10));
         top.setBorder(BorderFactory.createTitledBorder("Generar Factura"));
         
-        JTextField fechaFactura = new JTextField(10);
+        JSpinner fechaFactura = createDateSpinner();
         
         top.add(new JLabel("Vecino:"));
         top.add(comboVecinosFactura);
-        top.add(new JLabel("Fecha (YYYY-MM-DD):"));
+        top.add(new JLabel("Fecha Factura:"));
         top.add(fechaFactura);
         
         JButton facturar = new JButton("Facturar Pendientes");
@@ -493,12 +625,10 @@ public class App extends JFrame {
         facturar.addActionListener(e -> {
             try {
                 Vecino v = (Vecino) comboVecinosFactura.getSelectedItem();
-                LocalDate fecha = LocalDate.parse(fechaFactura.getText().trim());
+                LocalDate fecha = getDateFromSpinner(fechaFactura);
                 Factura f = gestor.crearFactura(v, fecha);
                 refreshAll();
-                JOptionPane.showMessageDialog(this, 
-                    "Factura creada con éxito\nID: " + f.getId() + "\nTotal: " + f.getTotal() + "€", 
-                    "Facturación", JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Factura creada con éxito\nID: " + f.getId() + "\nTotal: " + f.getTotal() + "€", "OK", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) { showError(ex.getMessage()); }
         });
 
@@ -515,26 +645,19 @@ public class App extends JFrame {
         JTable tablaMaterias = createStyledTable(materiasModel);
         JTable tablaInscritos = createStyledTable(inscritosModel);
 
-        // Panel dividido: Izq(Cursos) - Der(Materias/Inscritos)
-        JSplitPane splitRight = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
-                new JScrollPane(tablaMaterias), new JScrollPane(tablaInscritos));
+        JSplitPane splitRight = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(tablaMaterias), new JScrollPane(tablaInscritos));
         splitRight.setResizeWeight(0.5);
-
-        JSplitPane splitMain = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-                new JScrollPane(tablaCursos), splitRight);
+        JSplitPane splitMain = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(tablaCursos), splitRight);
         splitMain.setResizeWeight(0.4);
 
-        // Listener selección curso
         tablaCursos.getSelectionModel().addListSelectionListener((ListSelectionEvent e) -> {
             if (e.getValueIsAdjusting()) return;
             int row = tablaCursos.getSelectedRow();
             if (row < 0) return;
-            // Ojo: usar modelo si hay ordenación
             Curso c = (Curso) comboCursosInscripcion.getItemAt(tablaCursos.convertRowIndexToModel(row));
             refreshMateriasEInscritos(c);
         });
 
-        // Panel inferior con 3 formularios
         JPanel south = new JPanel(new GridLayout(1, 3, 10, 0));
         south.setBorder(new EmptyBorder(5, 0, 0, 0));
         south.add(buildCrearCursoPanel());
@@ -551,27 +674,23 @@ public class App extends JFrame {
     private JPanel buildCrearCursoPanel() {
         JPanel p = new JPanel(new GridLayout(0, 2, 5, 5));
         p.setBorder(BorderFactory.createTitledBorder("Nuevo Curso"));
-        
         JTextField nombre = new JTextField();
         JTextField precio = new JTextField();
         JTextField max = new JTextField("10");
-        JTextField inicio = new JTextField();
-        JTextField fin = new JTextField();
+        JSpinner inicio = createDateSpinner();
+        JSpinner fin = createDateSpinner();
         JButton crear = new JButton("Crear");
-
         p.add(new JLabel("Nombre:")); p.add(nombre);
         p.add(new JLabel("Precio:")); p.add(precio);
         p.add(new JLabel("Máx:")); p.add(max);
         p.add(new JLabel("Inicio:")); p.add(inicio);
         p.add(new JLabel("Fin:")); p.add(fin);
         p.add(new JLabel("")); p.add(crear);
-
         crear.addActionListener(e -> {
             try {
-                gestor.crearCurso(nombre.getText(), Double.parseDouble(precio.getText()), 
-                        Integer.parseInt(max.getText()), LocalDate.parse(inicio.getText()), LocalDate.parse(fin.getText()));
-                clearFields(nombre, precio, inicio, fin);
-                refreshAll();
+                gestor.crearCurso(nombre.getText(), Double.parseDouble(precio.getText()), Integer.parseInt(max.getText()), 
+                        getDateFromSpinner(inicio), getDateFromSpinner(fin));
+                clearFields(nombre, precio); refreshAll();
             } catch (Exception ex) { showError(ex.getMessage()); }
         });
         return p;
@@ -580,22 +699,18 @@ public class App extends JFrame {
     private JPanel buildAddMateriaPanel() {
         JPanel p = new JPanel(new GridLayout(0, 2, 5, 5));
         p.setBorder(BorderFactory.createTitledBorder("Añadir Materia"));
-        
         JTextField nombre = new JTextField();
         JTextField horas = new JTextField();
         JButton add = new JButton("Añadir");
-
         p.add(new JLabel("Curso:")); p.add(comboCursoMateria);
         p.add(new JLabel("Materia:")); p.add(nombre);
         p.add(new JLabel("Horas:")); p.add(horas);
         p.add(new JLabel("Prof:")); p.add(comboProfesorMateria);
         p.add(new JLabel("")); p.add(add);
-
         add.addActionListener(e -> {
             try {
                 gestor.addMateriaACurso((Curso)comboCursoMateria.getSelectedItem(), nombre.getText(), Integer.parseInt(horas.getText()), (Profesor)comboProfesorMateria.getSelectedItem());
-                clearFields(nombre, horas);
-                refreshAll();
+                clearFields(nombre, horas); refreshAll();
             } catch (Exception ex) { showError(ex.getMessage()); }
         });
         return p;
@@ -604,26 +719,21 @@ public class App extends JFrame {
     private JPanel buildInscripcionPanel() {
         JPanel p = new JPanel(new GridLayout(0, 2, 5, 5));
         p.setBorder(BorderFactory.createTitledBorder("Inscripción"));
-        
         JButton inscribir = new JButton("Inscribir");
         p.add(new JLabel("Vecino:")); p.add(comboVecinosInscripcion);
         p.add(new JLabel("Curso:")); p.add(comboCursosInscripcion);
         p.add(new JLabel("")); p.add(inscribir);
-
         inscribir.addActionListener(e -> {
-            try {
-                gestor.inscribirVecinoEnCurso((Vecino)comboVecinosInscripcion.getSelectedItem(), (Curso)comboCursosInscripcion.getSelectedItem());
-                refreshAll();
-            } catch (Exception ex) { showError(ex.getMessage()); }
+            try { gestor.inscribirVecinoEnCurso((Vecino)comboVecinosInscripcion.getSelectedItem(), (Curso)comboCursosInscripcion.getSelectedItem()); refreshAll(); } catch (Exception ex) { showError(ex.getMessage()); }
         });
         return p;
     }
 
     private void refreshMateriasEInscritos(Curso c) {
         materiasModel.setRowCount(0);
+        inscritosModel.setRowCount(0);
         if (c == null) return;
         for (Materia m : c.getMaterias()) materiasModel.addRow(new Object[]{m.getNombre(), m.getHoras(), m.getProfesor()});
-        inscritosModel.setRowCount(0);
         for (Vecino v : c.getInscritos()) inscritosModel.addRow(new Object[]{v.getDni(), v.getNombreApellidos()});
     }
 
@@ -653,10 +763,10 @@ public class App extends JFrame {
         
         // Crear
         JPanel p1 = new JPanel(new GridLayout(0,2)); p1.setBorder(BorderFactory.createTitledBorder("Nueva"));
-        JTextField fechaC = new JTextField(); JButton bCrear = new JButton("Crear");
+        JSpinner fechaC = createDateSpinner(); JButton bCrear = new JButton("Crear");
         p1.add(new JLabel("Auditor:")); p1.add(comboAuditores); p1.add(new JLabel("Fecha:")); p1.add(fechaC); p1.add(new JLabel("")); p1.add(bCrear);
         bCrear.addActionListener(ev -> {
-            try { gestor.crearAuditoria((Auditor)comboAuditores.getSelectedItem(), LocalDate.parse(fechaC.getText())); refreshAll(); } catch(Exception ex){showError(ex.getMessage());}
+            try { gestor.crearAuditoria((Auditor)comboAuditores.getSelectedItem(), getDateFromSpinner(fechaC)); refreshAll(); } catch(Exception ex){showError(ex.getMessage());}
         });
 
         // Asignar Visita
@@ -669,11 +779,11 @@ public class App extends JFrame {
 
         // Cerrar / Material
         JPanel p3 = new JPanel(new GridLayout(0,2)); p3.setBorder(BorderFactory.createTitledBorder("Gestión"));
-        JTextField fechaF = new JTextField(); JButton bCerrar = new JButton("Cerrar"); JButton bMat = new JButton("Add Mat");
+        JSpinner fechaF = createDateSpinner(); JButton bCerrar = new JButton("Cerrar"); JButton bMat = new JButton("Add Mat");
         p3.add(new JLabel("Fecha Fin:")); p3.add(fechaF); p3.add(bCerrar); p3.add(new JLabel(""));
         p3.add(new JLabel("Mat:")); p3.add(comboMaterialesParaAuditoria); p3.add(bMat);
         
-        bCerrar.addActionListener(ev -> { try { gestor.finalizarAuditoria((Auditoria)comboAuditorias.getSelectedItem(), LocalDate.parse(fechaF.getText())); refreshAll(); } catch(Exception ex){showError(ex.getMessage());}});
+        bCerrar.addActionListener(ev -> { try { gestor.finalizarAuditoria((Auditoria)comboAuditorias.getSelectedItem(), getDateFromSpinner(fechaF)); refreshAll(); } catch(Exception ex){showError(ex.getMessage());}});
         bMat.addActionListener(ev -> { try { gestor.asignarMaterialAAuditoria((Auditoria)comboAuditorias.getSelectedItem(), (Material)comboMaterialesParaAuditoria.getSelectedItem()); refreshAll(); } catch(Exception ex){showError(ex.getMessage());}});
         
         actions.add(p1); actions.add(p2); actions.add(p3);
@@ -693,27 +803,11 @@ public class App extends JFrame {
         for (Material m : a.getMateriales()) auditoriaMaterialesModel.addRow(new Object[]{m.getNombre(), m.getPrecio()});
     }
 
-    // --- UTILS UI ---
-    private void addLabeledField(JPanel p, String label, JComponent c) {
-        p.add(new JLabel(label, SwingConstants.RIGHT));
-        p.add(c);
-    }
-    
-    private void clearFields(JTextField... fields) {
-        for (JTextField f : fields) f.setText("");
-    }
-    
-    private void showError(String msg) {
-        JOptionPane.showMessageDialog(this, msg, "Error", JOptionPane.ERROR_MESSAGE);
-    }
-    
-    private void showWarning(String msg) {
-        JOptionPane.showMessageDialog(this, msg, "Aviso", JOptionPane.WARNING_MESSAGE);
-    }
-    
-    private boolean confirm(String msg) {
-        return JOptionPane.showConfirmDialog(this, msg, "Confirmar", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION;
-    }
+    // --- UTILS ---
+    private void addLabeledField(JPanel p, String label, JComponent c) { p.add(new JLabel(label, SwingConstants.RIGHT)); p.add(c); }
+    private void clearFields(JTextField... fields) { for (JTextField f : fields) f.setText(""); }
+    private void showError(String msg) { JOptionPane.showMessageDialog(this, msg, "Error", JOptionPane.ERROR_MESSAGE); }
+    private boolean confirm(String msg) { return JOptionPane.showConfirmDialog(this, msg, "Confirmar", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION; }
 
     // --- REFRESH ---
     private void refreshAll() {
@@ -726,55 +820,56 @@ public class App extends JFrame {
         refreshCursos();
         refreshAuditorias();
         refreshCombos();
+        updateDashboard();
+    }
+
+    private void updateDashboard() {
+        lblTotalVecinos.setText(String.valueOf(gestor.getVecinos().size()));
+        long pendientes = gestor.getVisitas().stream().filter(v -> v.getEstado() == EstadoPago.IMPAGADA).count();
+        lblVisitasPendientes.setText(String.valueOf(pendientes));
+        double total = gestor.getFacturas().stream().mapToDouble(f -> f.getTotal()).sum();
+        lblTotalRecaudado.setText(String.format("%.2f €", total));
     }
 
     private void refreshVecinos() {
         vecinosModel.setRowCount(0);
         for (Vecino v : gestor.getVecinos()) vecinosModel.addRow(new Object[]{v.getDni(), v.getNombreApellidos(), v.getDireccion(), v.getCodigoPostal(), v.getCiudad(), v.getTelefono()});
     }
-    
     private void refreshProfesores() {
         profesoresModel.setRowCount(0);
         listaProfesores = gestor.getProfesores();
         for (Profesor p : listaProfesores) profesoresModel.addRow(new Object[]{p.getNombre(), p.getApellidos(), p.getDireccion(), p.getTelefono(), p.getSueldo()});
     }
-
     private void refreshAuditoresGestion() {
         auditoresGestionModel.setRowCount(0);
         listaAuditoresGestion = gestor.getAuditores();
         for (Auditor a : listaAuditoresGestion) auditoresGestionModel.addRow(new Object[]{a.getNombre(), a.getApellidos(), a.getCifEmpresa(), a.getNombreEmpresa(), a.getDireccionEmpresa(), a.getTelefono()});
     }
-
     private void refreshMateriales() {
         materialesModel.setRowCount(0);
         listaMaterialesGestion = gestor.getRepositorioMateriales();
         for (Material m : listaMaterialesGestion) materialesModel.addRow(new Object[]{m.getNombre(), m.getPrecio()});
     }
-
     private void refreshVisitas() {
         visitasModel.setRowCount(0);
         for (FichaVisita v : gestor.getVisitas()) visitasModel.addRow(new Object[]{v.getId(), v.getFecha(), v.getVecino(), v.getDescripcion(), v.getImporte(), v.getNombreAdministrador(), v.getEstado()});
     }
-
     private void refreshFacturas() {
         facturasModel.setRowCount(0);
         for (Factura f : gestor.getFacturas()) facturasModel.addRow(new Object[]{f.getId(), f.getFechaCreacion(), f.getVecino(), f.getTotal(), f.getVisitas().size()});
     }
-
     private void refreshCursos() {
         cursosModel.setRowCount(0);
         for (Curso c : gestor.getCursos()) cursosModel.addRow(new Object[]{c.getNombre(), c.getDuracionTotalHoras() + "h", c.getPrecio(), c.getInscritos().size() + "/" + c.getMaxVecinos()});
         Curso selected = (Curso) comboCursosInscripcion.getSelectedItem();
         refreshMateriasEInscritos(selected);
     }
-
     private void refreshAuditorias() {
         auditoriasModel.setRowCount(0);
         for (Auditoria a : gestor.getAuditorias()) auditoriasModel.addRow(new Object[]{a.getId(), a.getAuditor(), a.getFechaCreacion(), a.getFechaFin(), a.getSueldoAuditor(), a.getVisitas().size(), a.getMateriales().size()});
         Auditoria selected = (Auditoria) comboAuditorias.getSelectedItem();
         refreshDetalleAuditoria(selected);
     }
-
     private void refreshCombos() {
         refillCombo(comboVecinosVisita, gestor.getVecinos());
         refillCombo(comboVecinosFactura, gestor.getVecinos());
@@ -787,7 +882,6 @@ public class App extends JFrame {
         refillCombo(comboVisitasParaAuditoria, gestor.getVisitas());
         refillCombo(comboMaterialesParaAuditoria, gestor.getRepositorioMateriales());
     }
-
     private static <T> void refillCombo(JComboBox<T> combo, List<T> items) {
         Object sel = combo.getSelectedItem();
         combo.removeAllItems();
@@ -795,21 +889,17 @@ public class App extends JFrame {
         if (sel != null && items.contains(sel)) combo.setSelectedItem(sel);
     }
 
-    // Modelo de tabla no editable
     private static class NonEditableModel extends DefaultTableModel {
         public NonEditableModel(Object[] columnNames, int rowCount) { super(columnNames, rowCount); }
         @Override public boolean isCellEditable(int row, int column) { return false; }
     }
 
-    // Renderer para visitas
     private static class EstadoPagoRenderer extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             if (!isSelected) {
-                // Obtenemos el valor de la columna Estado (índice 6)
                 Object estadoObj = table.getValueAt(row, 6); 
-                // Color suave
                 if ("PAGADA".equals(estadoObj.toString())) c.setBackground(new Color(220, 255, 220));
                 else c.setBackground(new Color(255, 220, 220));
                 c.setForeground(Color.BLACK);
