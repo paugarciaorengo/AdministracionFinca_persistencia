@@ -8,25 +8,14 @@ import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/**
- * Fachada de lógica de negocio.
- *
- * Nota: la persistencia se gestiona fuera de esta clase (ver paquete persistencia),
- * serializando un contenedor de datos.
- */
 public class GestorComunidad {
 
     // Validaciones visibles
     private static final Pattern DNI_PATTERN = Pattern.compile("^[0-9]{8}[A-Za-z]$");
     private static final Pattern TELEFONO_PATTERN = Pattern.compile("^[0-9]{9}$");
 
-    /** Contenedor serializable con todos los datos del dominio. */
     private final Datos datos;
 
-    /**
-     * Contenedor de datos serializable (repositorio en memoria persistible).
-     * Se serializa/deserializa desde el paquete persistencia.
-     */
     public static class Datos implements Serializable {
         private static final long serialVersionUID = 1L;
 
@@ -116,7 +105,6 @@ public class GestorComunidad {
             throw new IllegalStateException("El vecino no tiene visitas pendientes.");
         }
 
-        // Marcar pagadas (transacción simulada)
         for (FichaVisita v : pendientes) {
             v.marcarPagada();
         }
@@ -136,6 +124,10 @@ public class GestorComunidad {
     }
 
     public List<Profesor> getProfesores() { return new ArrayList<>(datos.profesores); }
+
+    public void eliminarProfesor(Profesor p) {
+        datos.profesores.remove(p);
+    }
 
     public Curso crearCurso(String nombre, double precio, int maxVecinos, LocalDate inicio, LocalDate fin) {
         if (nombre == null || nombre.trim().isEmpty()) throw new IllegalArgumentException("Nombre de curso obligatorio.");
@@ -160,7 +152,7 @@ public class GestorComunidad {
     public void inscribirVecinoEnCurso(Vecino vecino, Curso curso) {
         Objects.requireNonNull(vecino, "vecino");
         Objects.requireNonNull(curso, "curso");
-        curso.inscribir(vecino); // valida cupo
+        curso.inscribir(vecino);
     }
 
     // --- Auditores / Auditorías / Materiales ---
@@ -171,6 +163,10 @@ public class GestorComunidad {
     }
 
     public List<Auditor> getAuditores() { return new ArrayList<>(datos.auditores); }
+
+    public void eliminarAuditor(Auditor a) {
+        datos.auditores.remove(a);
+    }
 
     public Auditoria crearAuditoria(Auditor auditor, LocalDate fechaCreacion) {
         Objects.requireNonNull(auditor, "auditor");
@@ -208,9 +204,4 @@ public class GestorComunidad {
         Objects.requireNonNull(material, "material");
         auditoria.asignarMaterial(material);
     }
-
-    /**
-     * Datos de ejemplo desactivados por defecto para no asumir fechas.
-     * Si se quisieran cargar, deberían introducirse manualmente desde la UI.
-     */
 }

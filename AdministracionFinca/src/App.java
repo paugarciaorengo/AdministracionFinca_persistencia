@@ -13,6 +13,7 @@ import java.io.File;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * SIGCO (demo Swing) - Implementación de funcionalidades descritas en el PDF.
@@ -22,10 +23,17 @@ public class App extends JFrame {
     private final File ficheroDatos;
     private final GestorComunidad gestor;
 
+    // Caches locales para mapeo
+    private List<Profesor> listaProfesores = new ArrayList<>();
+    private List<Auditor> listaAuditoresGestion = new ArrayList<>();
+
     // Modelos de tablas
     private final DefaultTableModel vecinosModel = new DefaultTableModel(new Object[]{"DNI", "Nombre", "Dirección", "CP", "Ciudad", "Teléfono"}, 0);
     private final DefaultTableModel visitasModel = new DefaultTableModel(new Object[]{"ID", "Fecha", "Vecino", "Descripción", "Importe", "Admin", "Estado"}, 0);
     private final DefaultTableModel facturasModel = new DefaultTableModel(new Object[]{"ID", "Fecha", "Vecino", "Total", "#Visitas"}, 0);
+    private final DefaultTableModel profesoresModel = new DefaultTableModel(new Object[]{"Nombre", "Apellidos", "Dirección", "Teléfono", "Sueldo"}, 0);
+    private final DefaultTableModel auditoresGestionModel = new DefaultTableModel(new Object[]{"Nombre", "Apellidos", "CIF", "Empresa", "Dirección", "Teléfono"}, 0);
+    
     private final DefaultTableModel cursosModel = new DefaultTableModel(new Object[]{"Curso", "Duración", "Precio", "Inscritos"}, 0);
     private final DefaultTableModel materiasModel = new DefaultTableModel(new Object[]{"Materia", "Horas", "Profesor"}, 0);
     private final DefaultTableModel inscritosModel = new DefaultTableModel(new Object[]{"DNI", "Vecino"}, 0);
@@ -47,6 +55,8 @@ public class App extends JFrame {
 
     private final JTable tablaVisitas = new JTable(visitasModel);
     private final JTable tablaAuditorias = new JTable(auditoriasModel);
+    private final JTable tablaProfesores = new JTable(profesoresModel);
+    private final JTable tablaAuditoresGestion = new JTable(auditoresGestionModel);
 
     public App() {
         setTitle("SIGCO - Gestión de Comunidades (Java)");
@@ -54,14 +64,13 @@ public class App extends JFrame {
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setLocationRelativeTo(null);
 
-        // Persistencia: cargar datos (si no existe, iniciar vacío)
+        // Persistencia: cargar datos
         this.ficheroDatos = new File("sigco.dat");
         GestorComunidad.Datos datos;
         if (ficheroDatos.exists()) {
             try {
                 datos = GestorPersistencia.cargar(ficheroDatos);
             } catch (Exception ex) {
-                // Si hay corrupción o incompatibilidad de serialización, arrancar vacío y avisar.
                 datos = new GestorComunidad.Datos();
                 JOptionPane.showMessageDialog(this,
                         "No se han podido cargar los datos guardados (se iniciará vacío).\n\nMotivo: " + ex.getMessage(),
@@ -72,7 +81,6 @@ public class App extends JFrame {
         }
         this.gestor = new GestorComunidad(datos);
 
-        // Guardado automático al cerrar
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -82,6 +90,8 @@ public class App extends JFrame {
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Vecinos", buildVecinosPanel());
+        tabs.addTab("Profesores", buildProfesoresPanel());
+        tabs.addTab("Gestión Auditores", buildAuditoresGestionPanel());
         tabs.addTab("Visitas", buildVisitasPanel());
         tabs.addTab("Facturación", buildFacturacionPanel());
         tabs.addTab("Cursos", buildCursosPanel());
@@ -89,7 +99,6 @@ public class App extends JFrame {
 
         setContentPane(tabs);
 
-        // Render para distinguir pagadas/impagadas
         tablaVisitas.setDefaultRenderer(Object.class, new EstadoPagoRenderer());
 
         refreshAll();
@@ -102,7 +111,7 @@ public class App extends JFrame {
             System.exit(0);
         } catch (Exception ex) {
             int opt = JOptionPane.showConfirmDialog(this,
-                    "No se han podido guardar los datos:\n" + ex.getMessage() + "\n\n¿Salir igualmente? (Se perderán los cambios)",
+                    "No se han podido guardar los datos:\n" + ex.getMessage() + "\n\n¿Salir igualmente?",
                     "Persistencia", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if (opt == JOptionPane.YES_OPTION) {
                 dispose();
@@ -150,6 +159,193 @@ public class App extends JFrame {
         root.add(south, BorderLayout.SOUTH);
         return root;
     }
+    
+    // -------------------- PROFESORES --------------------
+    private JPanel buildProfesoresPanel() {
+        JPanel root = new JPanel(new BorderLayout(10, 10));
+
+        root.add(new JScrollPane(tablaProfesores), BorderLayout.CENTER);
+
+        JPanel form = new JPanel(new GridLayout(0, 2, 8, 6));
+        JTextField nombre = new JTextField();
+        JTextField apellidos = new JTextField();
+        JTextField direccion = new JTextField();
+        JTextField telefono = new JTextField();
+        JTextField sueldo = new JTextField();
+
+        form.add(new JLabel("Nombre:")); form.add(nombre);
+        form.add(new JLabel("Apellidos:")); form.add(apellidos);
+        form.add(new JLabel("Dirección:")); form.add(direccion);
+        form.add(new JLabel("Teléfono:")); form.add(telefono);
+        form.add(new JLabel("Sueldo:")); form.add(sueldo);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton add = new JButton("Añadir");
+        JButton update = new JButton("Modificar");
+        JButton delete = new JButton("Eliminar");
+        buttons.add(add); buttons.add(update); buttons.add(delete);
+
+        tablaProfesores.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int row = tablaProfesores.getSelectedRow();
+            if (row >= 0 && row < listaProfesores.size()) {
+                Profesor p = listaProfesores.get(row);
+                nombre.setText(p.getNombre());
+                apellidos.setText(p.getApellidos());
+                direccion.setText(p.getDireccion());
+                telefono.setText(p.getTelefono());
+                sueldo.setText(String.valueOf(p.getSueldo()));
+            }
+        });
+
+        add.addActionListener(e -> {
+            try {
+                double s = Double.parseDouble(sueldo.getText().trim());
+                gestor.registrarProfesor(nombre.getText(), apellidos.getText(), direccion.getText(), telefono.getText(), s);
+                refreshAll();
+                nombre.setText(""); apellidos.setText(""); direccion.setText(""); telefono.setText(""); sueldo.setText("");
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Sueldo inválido", "Error", JOptionPane.ERROR_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        update.addActionListener(e -> {
+            int row = tablaProfesores.getSelectedRow();
+            if (row < 0) {
+                JOptionPane.showMessageDialog(this, "Selecciona un profesor para modificar", "Aviso", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            try {
+                Profesor p = listaProfesores.get(row);
+                p.setNombre(nombre.getText());
+                p.setApellidos(apellidos.getText());
+                p.setDireccion(direccion.getText());
+                p.setTelefono(telefono.getText());
+                p.setSueldo(Double.parseDouble(sueldo.getText().trim()));
+                refreshAll();
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Sueldo inválido", "Error", JOptionPane.ERROR_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        delete.addActionListener(e -> {
+            int row = tablaProfesores.getSelectedRow();
+            if (row < 0) {
+                JOptionPane.showMessageDialog(this, "Selecciona un profesor para eliminar", "Aviso", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            int confirm = JOptionPane.showConfirmDialog(this, "¿Seguro que quieres eliminar este profesor?", "Confirmar", JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                Profesor p = listaProfesores.get(row);
+                gestor.eliminarProfesor(p);
+                refreshAll();
+                nombre.setText(""); apellidos.setText(""); direccion.setText(""); telefono.setText(""); sueldo.setText("");
+            }
+        });
+
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(form, BorderLayout.CENTER);
+        south.add(buttons, BorderLayout.SOUTH);
+        root.add(south, BorderLayout.SOUTH);
+        return root;
+    }
+
+    // -------------------- GESTIÓN AUDITORES --------------------
+    private JPanel buildAuditoresGestionPanel() {
+        JPanel root = new JPanel(new BorderLayout(10, 10));
+
+        root.add(new JScrollPane(tablaAuditoresGestion), BorderLayout.CENTER);
+
+        JPanel form = new JPanel(new GridLayout(0, 2, 8, 6));
+        JTextField nombre = new JTextField();
+        JTextField apellidos = new JTextField();
+        JTextField cif = new JTextField();
+        JTextField empresa = new JTextField();
+        JTextField direccion = new JTextField();
+        JTextField telefono = new JTextField();
+
+        form.add(new JLabel("Nombre:")); form.add(nombre);
+        form.add(new JLabel("Apellidos:")); form.add(apellidos);
+        form.add(new JLabel("CIF Empresa:")); form.add(cif);
+        form.add(new JLabel("Nombre Empresa:")); form.add(empresa);
+        form.add(new JLabel("Dirección Empresa:")); form.add(direccion);
+        form.add(new JLabel("Teléfono:")); form.add(telefono);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton add = new JButton("Añadir");
+        JButton update = new JButton("Modificar");
+        JButton delete = new JButton("Eliminar");
+        buttons.add(add); buttons.add(update); buttons.add(delete);
+
+        tablaAuditoresGestion.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int row = tablaAuditoresGestion.getSelectedRow();
+            if (row >= 0 && row < listaAuditoresGestion.size()) {
+                Auditor a = listaAuditoresGestion.get(row);
+                nombre.setText(a.getNombre());
+                apellidos.setText(a.getApellidos());
+                cif.setText(a.getCifEmpresa());
+                empresa.setText(a.getNombreEmpresa());
+                direccion.setText(a.getDireccionEmpresa());
+                telefono.setText(a.getTelefono());
+            }
+        });
+
+        add.addActionListener(e -> {
+            try {
+                gestor.registrarAuditor(nombre.getText(), apellidos.getText(), cif.getText(), empresa.getText(), direccion.getText(), telefono.getText());
+                refreshAll();
+                nombre.setText(""); apellidos.setText(""); cif.setText(""); empresa.setText(""); direccion.setText(""); telefono.setText("");
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        update.addActionListener(e -> {
+            int row = tablaAuditoresGestion.getSelectedRow();
+            if (row < 0) {
+                JOptionPane.showMessageDialog(this, "Selecciona un auditor para modificar", "Aviso", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            try {
+                Auditor a = listaAuditoresGestion.get(row);
+                a.setNombre(nombre.getText());
+                a.setApellidos(apellidos.getText());
+                a.setCifEmpresa(cif.getText());
+                a.setNombreEmpresa(empresa.getText());
+                a.setDireccionEmpresa(direccion.getText());
+                a.setTelefono(telefono.getText());
+                refreshAll();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        delete.addActionListener(e -> {
+            int row = tablaAuditoresGestion.getSelectedRow();
+            if (row < 0) {
+                JOptionPane.showMessageDialog(this, "Selecciona un auditor para eliminar", "Aviso", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            int confirm = JOptionPane.showConfirmDialog(this, "¿Seguro que quieres eliminar este auditor?", "Confirmar", JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                Auditor a = listaAuditoresGestion.get(row);
+                gestor.eliminarAuditor(a);
+                refreshAll();
+                nombre.setText(""); apellidos.setText(""); cif.setText(""); empresa.setText(""); direccion.setText(""); telefono.setText("");
+            }
+        });
+
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(form, BorderLayout.CENTER);
+        south.add(buttons, BorderLayout.SOUTH);
+        root.add(south, BorderLayout.SOUTH);
+        return root;
+    }
 
     // -------------------- VISITAS --------------------
     private JPanel buildVisitasPanel() {
@@ -158,7 +354,7 @@ public class App extends JFrame {
         root.add(new JScrollPane(tablaVisitas), BorderLayout.CENTER);
 
         JPanel form = new JPanel(new GridLayout(0, 2, 8, 6));
-        JTextField fecha = new JTextField(); // Se pide siempre al usuario (no asumir LocalDate.now())
+        JTextField fecha = new JTextField();
         JTextField descripcion = new JTextField();
         JTextField importe = new JTextField();
         JTextField admin = new JTextField();
@@ -243,7 +439,6 @@ public class App extends JFrame {
 
         root.add(split, BorderLayout.CENTER);
 
-        // Selección de curso: cargar materias e inscritos
         tablaCursos.getSelectionModel().addListSelectionListener((ListSelectionEvent e) -> {
             if (e.getValueIsAdjusting()) return;
             int row = tablaCursos.getSelectedRow();
@@ -252,7 +447,6 @@ public class App extends JFrame {
             refreshMateriasEInscritos(c);
         });
 
-        // Panel inferior: crear curso, añadir materia, inscribir
         JPanel south = new JPanel(new GridLayout(1, 3, 10, 10));
         south.add(buildCrearCursoPanel());
         south.add(buildAddMateriaPanel());
@@ -267,15 +461,15 @@ public class App extends JFrame {
         JTextField nombre = new JTextField();
         JTextField precio = new JTextField();
         JTextField max = new JTextField("10");
-        JTextField inicio = new JTextField(); // Se pide siempre al usuario
-        JTextField fin = new JTextField();    // Se pide siempre al usuario
+        JTextField inicio = new JTextField();
+        JTextField fin = new JTextField();
         JButton crear = new JButton("Crear");
 
         p.add(new JLabel("Nombre:")); p.add(nombre);
         p.add(new JLabel("Precio:")); p.add(precio);
         p.add(new JLabel("Máx vecinos:")); p.add(max);
-        p.add(new JLabel("Inicio:")); p.add(inicio);
-        p.add(new JLabel("Fin:")); p.add(fin);
+        p.add(new JLabel("Inicio (YYYY-MM-DD):")); p.add(inicio);
+        p.add(new JLabel("Fin (YYYY-MM-DD):")); p.add(fin);
         p.add(new JLabel("")); p.add(crear);
 
         crear.addActionListener(e -> {
@@ -491,6 +685,8 @@ public class App extends JFrame {
     // -------------------- REFRESH GLOBAL --------------------
     private void refreshAll() {
         refreshVecinos();
+        refreshProfesores(); 
+        refreshAuditoresGestion();
         refreshVisitas();
         refreshFacturas();
         refreshCursos();
@@ -502,6 +698,22 @@ public class App extends JFrame {
         vecinosModel.setRowCount(0);
         for (Vecino v : gestor.getVecinos()) {
             vecinosModel.addRow(new Object[]{v.getDni(), v.getNombreApellidos(), v.getDireccion(), v.getCodigoPostal(), v.getCiudad(), v.getTelefono()});
+        }
+    }
+    
+    private void refreshProfesores() {
+        profesoresModel.setRowCount(0);
+        listaProfesores = gestor.getProfesores();
+        for (Profesor p : listaProfesores) {
+            profesoresModel.addRow(new Object[]{p.getNombre(), p.getApellidos(), p.getDireccion(), p.getTelefono(), p.getSueldo()});
+        }
+    }
+
+    private void refreshAuditoresGestion() {
+        auditoresGestionModel.setRowCount(0);
+        listaAuditoresGestion = gestor.getAuditores();
+        for (Auditor a : listaAuditoresGestion) {
+            auditoresGestionModel.addRow(new Object[]{a.getNombre(), a.getApellidos(), a.getCifEmpresa(), a.getNombreEmpresa(), a.getDireccionEmpresa(), a.getTelefono()});
         }
     }
 
@@ -524,7 +736,6 @@ public class App extends JFrame {
         for (Curso c : gestor.getCursos()) {
             cursosModel.addRow(new Object[]{c.getNombre(), c.getDuracionTotalHoras() + "h", c.getPrecio(), c.getInscritos().size() + "/" + c.getMaxVecinos()});
         }
-        // refrescar detalle con el curso seleccionado en combo
         Curso selected = (Curso) comboCursosInscripcion.getSelectedItem();
         if (selected != null) refreshMateriasEInscritos(selected);
     }
@@ -539,23 +750,18 @@ public class App extends JFrame {
     }
 
     private void refreshCombos() {
-        // Vecinos
         refillCombo(comboVecinosVisita, gestor.getVecinos());
         refillCombo(comboVecinosFactura, gestor.getVecinos());
         refillCombo(comboVecinosInscripcion, gestor.getVecinos());
 
-        // Profesores
         refillCombo(comboProfesorMateria, gestor.getProfesores());
 
-        // Cursos
         refillCombo(comboCursosInscripcion, gestor.getCursos());
         refillCombo(comboCursoMateria, gestor.getCursos());
 
-        // Auditores / auditorías
         refillCombo(comboAuditores, gestor.getAuditores());
         refillCombo(comboAuditorias, gestor.getAuditorias());
 
-        // Visitas / material
         refillCombo(comboVisitasParaAuditoria, gestor.getVisitas());
         refillCombo(comboMaterialesParaAuditoria, gestor.getRepositorioMateriales());
     }
@@ -567,7 +773,6 @@ public class App extends JFrame {
         if (sel != null) combo.setSelectedItem(sel);
     }
 
-    // Renderer: distinguir visitas pagadas/impagadas
     private static class EstadoPagoRenderer extends JLabel implements TableCellRenderer {
         EstadoPagoRenderer() {
             setOpaque(true);
