@@ -24,12 +24,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * SIGCO - Versión Profesional
- * Incluye:
- * 1. Buscador específico por columnas.
- * 2. Exportación a CSV (Excel).
- * 3. Dashboard Interactivo.
- * 4. Calendarios (Spinners).
+ * SIGCO - Versión Profesional con Iconos Vectoriales
  */
 public class App extends JFrame {
 
@@ -111,15 +106,16 @@ public class App extends JFrame {
         JTabbedPane tabs = new JTabbedPane();
         tabs.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         
-        tabs.addTab("🏠 Dashboard", buildDashboardPanel());
-        tabs.addTab("👥 Vecinos", buildVecinosPanel());
-        tabs.addTab("🎓 Profesores", buildProfesoresPanel());
-        tabs.addTab("📋 Auditores", buildAuditoresGestionPanel());
-        tabs.addTab("📦 Materiales", buildMaterialesPanel());
-        tabs.addTab("📅 Visitas", buildVisitasPanel());
-        tabs.addTab("💶 Facturación", buildFacturacionPanel());
-        tabs.addTab("📚 Cursos", buildCursosPanel());
-        tabs.addTab("🔍 Auditorías", buildAuditoriasPanel());
+        // MODIFICACIÓN: Uso de ModernIcon en lugar de emojis
+        tabs.addTab("Dashboard", new ModernIcon(ModernIcon.HOME), buildDashboardPanel());
+        tabs.addTab("Vecinos", new ModernIcon(ModernIcon.USER), buildVecinosPanel());
+        tabs.addTab("Profesores", new ModernIcon(ModernIcon.HAT), buildProfesoresPanel());
+        tabs.addTab("Auditores", new ModernIcon(ModernIcon.CASE), buildAuditoresGestionPanel());
+        tabs.addTab("Materiales", new ModernIcon(ModernIcon.BOX), buildMaterialesPanel());
+        tabs.addTab("Visitas", new ModernIcon(ModernIcon.CALENDAR), buildVisitasPanel());
+        tabs.addTab("Facturación", new ModernIcon(ModernIcon.MONEY), buildFacturacionPanel());
+        tabs.addTab("Cursos", new ModernIcon(ModernIcon.BOOK), buildCursosPanel());
+        tabs.addTab("Auditorías", new ModernIcon(ModernIcon.SEARCH), buildAuditoriasPanel());
 
         tabs.addChangeListener(e -> {
             if (tabs.getSelectedIndex() == 0) updateDashboard();
@@ -674,23 +670,27 @@ public class App extends JFrame {
     private JPanel buildCrearCursoPanel() {
         JPanel p = new JPanel(new GridLayout(0, 2, 5, 5));
         p.setBorder(BorderFactory.createTitledBorder("Nuevo Curso"));
+        
         JTextField nombre = new JTextField();
         JTextField precio = new JTextField();
         JTextField max = new JTextField("10");
         JSpinner inicio = createDateSpinner();
         JSpinner fin = createDateSpinner();
         JButton crear = new JButton("Crear");
+
         p.add(new JLabel("Nombre:")); p.add(nombre);
         p.add(new JLabel("Precio:")); p.add(precio);
         p.add(new JLabel("Máx:")); p.add(max);
         p.add(new JLabel("Inicio:")); p.add(inicio);
         p.add(new JLabel("Fin:")); p.add(fin);
         p.add(new JLabel("")); p.add(crear);
+
         crear.addActionListener(e -> {
             try {
                 gestor.crearCurso(nombre.getText(), Double.parseDouble(precio.getText()), Integer.parseInt(max.getText()), 
                         getDateFromSpinner(inicio), getDateFromSpinner(fin));
-                clearFields(nombre, precio); refreshAll();
+                clearFields(nombre, precio);
+                refreshAll();
             } catch (Exception ex) { showError(ex.getMessage()); }
         });
         return p;
@@ -905,6 +905,35 @@ public class App extends JFrame {
                 c.setForeground(Color.BLACK);
             }
             return c;
+        }
+    }
+
+    /** * CLASE PARA ICONOS VECTORIALES (AÑADIDO NUEVO)
+     * Dibuja los iconos directamente con código Java 2D.
+     */
+    static class ModernIcon implements Icon {
+        static final int HOME=0, USER=1, HAT=2, CASE=3, BOX=4, CALENDAR=5, MONEY=6, BOOK=7, SEARCH=8;
+        private final int type;
+        public ModernIcon(int type) { this.type = type; }
+        @Override public int getIconWidth() { return 18; }
+        @Override public int getIconHeight() { return 18; }
+        @Override public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.translate(x, y);
+            g2.setColor(new Color(80, 80, 80)); // Gris oscuro
+            switch(type) {
+                case HOME: g2.fillPolygon(new int[]{9,2,16}, new int[]{2,9,9}, 3); g2.fillRect(5, 9, 8, 7); break;
+                case USER: g2.fillOval(5, 2, 8, 8); g2.fillArc(2, 10, 14, 10, 0, 180); break;
+                case HAT: g2.fillRect(2, 8, 14, 2); g2.fillRect(5, 4, 8, 4); break;
+                case CASE: g2.fillRect(3, 5, 12, 10); g2.drawRect(6, 2, 6, 3); break;
+                case BOX: g2.drawRect(3, 3, 12, 12); g2.drawLine(3, 3, 15, 15); g2.drawLine(15, 3, 3, 15); break;
+                case CALENDAR: g2.drawRect(3, 4, 12, 11); g2.fillRect(3, 4, 12, 3); break;
+                case MONEY: g2.drawOval(2, 2, 14, 14); g2.drawString("$", 6, 14); break;
+                case BOOK: g2.fillRect(3, 3, 5, 12); g2.fillRect(10, 3, 5, 12); break;
+                case SEARCH: g2.drawOval(4, 4, 8, 8); g2.drawLine(11, 11, 15, 15); break;
+            }
+            g2.dispose();
         }
     }
 
