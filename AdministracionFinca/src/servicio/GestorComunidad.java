@@ -198,6 +198,11 @@ public class GestorComunidad {
     }
 
     public List<Material> getRepositorioMateriales() { return new ArrayList<>(datos.repositorioMateriales); }
+    
+    // NUEVO MÉTODO
+    public void eliminarMaterial(Material m) {
+        datos.repositorioMateriales.remove(m);
+    }
 
     public void asignarMaterialAAuditoria(Auditoria auditoria, Material material) {
         Objects.requireNonNull(auditoria, "auditoria");

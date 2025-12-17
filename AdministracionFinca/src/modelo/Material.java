@@ -3,7 +3,7 @@ package modelo;
 import java.util.Objects;
 
 public class Material implements java.io.Serializable {
-    private final String nombre;
+    private String nombre; // Ya no es final
     private double precio;
 
     public Material(String nombre, double precio) {
@@ -12,6 +12,12 @@ public class Material implements java.io.Serializable {
     }
 
     public String getNombre() { return nombre; }
+    
+    // Setter añadido para modificación
+    public void setNombre(String nombre) { 
+        this.nombre = Objects.requireNonNull(nombre, "nombre").trim(); 
+    }
+
     public double getPrecio() { return precio; }
     public void setPrecio(double precio) { this.precio = precio; }
 

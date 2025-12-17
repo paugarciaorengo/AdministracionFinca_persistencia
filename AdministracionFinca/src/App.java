@@ -26,6 +26,7 @@ public class App extends JFrame {
     // Caches locales para mapeo
     private List<Profesor> listaProfesores = new ArrayList<>();
     private List<Auditor> listaAuditoresGestion = new ArrayList<>();
+    private List<Material> listaMaterialesGestion = new ArrayList<>(); // NUEVO
 
     // Modelos de tablas
     private final DefaultTableModel vecinosModel = new DefaultTableModel(new Object[]{"DNI", "Nombre", "Dirección", "CP", "Ciudad", "Teléfono"}, 0);
@@ -34,6 +35,9 @@ public class App extends JFrame {
     private final DefaultTableModel profesoresModel = new DefaultTableModel(new Object[]{"Nombre", "Apellidos", "Dirección", "Teléfono", "Sueldo"}, 0);
     private final DefaultTableModel auditoresGestionModel = new DefaultTableModel(new Object[]{"Nombre", "Apellidos", "CIF", "Empresa", "Dirección", "Teléfono"}, 0);
     
+    // NUEVO MODELO PARA MATERIALES
+    private final DefaultTableModel materialesModel = new DefaultTableModel(new Object[]{"Nombre", "Precio"}, 0);
+
     private final DefaultTableModel cursosModel = new DefaultTableModel(new Object[]{"Curso", "Duración", "Precio", "Inscritos"}, 0);
     private final DefaultTableModel materiasModel = new DefaultTableModel(new Object[]{"Materia", "Horas", "Profesor"}, 0);
     private final DefaultTableModel inscritosModel = new DefaultTableModel(new Object[]{"DNI", "Vecino"}, 0);
@@ -57,6 +61,7 @@ public class App extends JFrame {
     private final JTable tablaAuditorias = new JTable(auditoriasModel);
     private final JTable tablaProfesores = new JTable(profesoresModel);
     private final JTable tablaAuditoresGestion = new JTable(auditoresGestionModel);
+    private final JTable tablaMateriales = new JTable(materialesModel); // NUEVA TABLA
 
     public App() {
         setTitle("SIGCO - Gestión de Comunidades (Java)");
@@ -92,6 +97,7 @@ public class App extends JFrame {
         tabs.addTab("Vecinos", buildVecinosPanel());
         tabs.addTab("Profesores", buildProfesoresPanel());
         tabs.addTab("Gestión Auditores", buildAuditoresGestionPanel());
+        tabs.addTab("Materiales", buildMaterialesPanel()); // NUEVA PESTAÑA
         tabs.addTab("Visitas", buildVisitasPanel());
         tabs.addTab("Facturación", buildFacturacionPanel());
         tabs.addTab("Cursos", buildCursosPanel());
@@ -337,6 +343,88 @@ public class App extends JFrame {
                 gestor.eliminarAuditor(a);
                 refreshAll();
                 nombre.setText(""); apellidos.setText(""); cif.setText(""); empresa.setText(""); direccion.setText(""); telefono.setText("");
+            }
+        });
+
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(form, BorderLayout.CENTER);
+        south.add(buttons, BorderLayout.SOUTH);
+        root.add(south, BorderLayout.SOUTH);
+        return root;
+    }
+
+    // -------------------- MATERIALES (NUEVO PANEL) --------------------
+    private JPanel buildMaterialesPanel() {
+        JPanel root = new JPanel(new BorderLayout(10, 10));
+
+        root.add(new JScrollPane(tablaMateriales), BorderLayout.CENTER);
+
+        JPanel form = new JPanel(new GridLayout(0, 2, 8, 6));
+        JTextField nombre = new JTextField();
+        JTextField precio = new JTextField();
+
+        form.add(new JLabel("Nombre:")); form.add(nombre);
+        form.add(new JLabel("Precio:")); form.add(precio);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton add = new JButton("Añadir");
+        JButton update = new JButton("Modificar");
+        JButton delete = new JButton("Eliminar");
+        buttons.add(add); buttons.add(update); buttons.add(delete);
+
+        tablaMateriales.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            int row = tablaMateriales.getSelectedRow();
+            if (row >= 0 && row < listaMaterialesGestion.size()) {
+                Material m = listaMaterialesGestion.get(row);
+                nombre.setText(m.getNombre());
+                precio.setText(String.valueOf(m.getPrecio()));
+            }
+        });
+
+        add.addActionListener(e -> {
+            try {
+                double pr = Double.parseDouble(precio.getText().trim());
+                gestor.registrarMaterial(nombre.getText(), pr);
+                refreshAll();
+                nombre.setText(""); precio.setText("");
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Precio inválido", "Error", JOptionPane.ERROR_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        update.addActionListener(e -> {
+            int row = tablaMateriales.getSelectedRow();
+            if (row < 0) {
+                JOptionPane.showMessageDialog(this, "Selecciona un material para modificar", "Aviso", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            try {
+                Material m = listaMaterialesGestion.get(row);
+                m.setNombre(nombre.getText());
+                m.setPrecio(Double.parseDouble(precio.getText().trim()));
+                refreshAll();
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Precio inválido", "Error", JOptionPane.ERROR_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        delete.addActionListener(e -> {
+            int row = tablaMateriales.getSelectedRow();
+            if (row < 0) {
+                JOptionPane.showMessageDialog(this, "Selecciona un material para eliminar", "Aviso", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            int confirm = JOptionPane.showConfirmDialog(this, "¿Seguro que quieres eliminar este material?", "Confirmar", JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                Material m = listaMaterialesGestion.get(row);
+                gestor.eliminarMaterial(m);
+                refreshAll();
+                nombre.setText(""); precio.setText("");
             }
         });
 
@@ -687,6 +775,7 @@ public class App extends JFrame {
         refreshVecinos();
         refreshProfesores(); 
         refreshAuditoresGestion();
+        refreshMateriales(); // NUEVO REFRESH
         refreshVisitas();
         refreshFacturas();
         refreshCursos();
@@ -714,6 +803,14 @@ public class App extends JFrame {
         listaAuditoresGestion = gestor.getAuditores();
         for (Auditor a : listaAuditoresGestion) {
             auditoresGestionModel.addRow(new Object[]{a.getNombre(), a.getApellidos(), a.getCifEmpresa(), a.getNombreEmpresa(), a.getDireccionEmpresa(), a.getTelefono()});
+        }
+    }
+
+    private void refreshMateriales() {
+        materialesModel.setRowCount(0);
+        listaMaterialesGestion = gestor.getRepositorioMateriales();
+        for (Material m : listaMaterialesGestion) {
+            materialesModel.addRow(new Object[]{m.getNombre(), m.getPrecio()});
         }
     }
 
